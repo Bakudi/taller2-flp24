@@ -1,4 +1,6 @@
 #lang eopl
+(require rackunit)
+
 (define especificacion-lexica
   '(
     (espacio-blanco (whitespace) skip)
@@ -63,11 +65,13 @@
     (expresion ("first" "(" expresion ")") list-first-exp)
     (expresion ("rest" "(" expresion ")") list-rest-exp)
     (expresion ("nth" "(" expresion expresion ")") list-nth-exp)
+    ;; Expesiones de cond
+  ;;(expresion ("let" (arbno identificador "=" expresion) "in" expresion) let-exp)
+    (expresion ("cond" (arbno expresion "-" expresion) "else" expresion "end") cond-exp)
   ))
 
 ;;Creamos los datatypes automaticamente
 (sllgen:make-define-datatypes especificacion-lexica especificacion-gramatical)
-
 
 ;;Evaluar programa
 (define evaluar-programa
@@ -267,6 +271,28 @@
                       (if (and (list? l) (number? n) (< n (length l)) (>= n 0))
                           (list-ref l n)
                           (eopl:error "Error: Índice fuera de rango o no válido" pos))))
+
+
+      ;; Expresiones de cond
+      (cond-exp (clausulas else-exp amb)
+        (let loop ((restantes clausulas))
+          (if (null? restantes)
+          ;; Si no hay más cláusulas, evalúa y devuelve el else-exp.
+          (evaluar-expresion else-exp amb)
+          ;; Procesa la primera cláusula.
+          (let ((clausula (car restantes)))
+            (if (and (pair? clausula) (= (length clausula) 2))
+              (let ((condicion (car clausula))
+                    (resultado (cadr clausula)))
+                (if (evaluar-expresion condicion amb)
+                    ;; Si la condición es verdadera, evalúa el resultado.
+                    (evaluar-expresion resultado amb)
+                    ;; Si es falsa, sigue con las siguientes cláusulas.
+                    (loop (cdr restantes))))
+              (eopl:error "Formato de cláusula inválido" clausula))))))
+
+
+
       )))
 
 
@@ -345,4 +371,45 @@
                          especificacion-lexica especificacion-gramatical)))
 
 
+;;Pruebas Rackunit
+(define (run-cond-tests)
+  (let ((env (ambiente-vacio)))
+    ;; Caso simple con una condición verdadera
+    (test-equal? "Simple cond true"
+      (evaluar-expresion ("cond" ("-" "x" "1") "-" "1" "else" "9" "end") env)
+      1)
+
+    ;; Caso simple con una condición falsa y else
+    (test-equal? "Simple cond false with else"
+      (evaluar-expresion ("cond" ("-" "x" "2") "-" "2" "else" "9" "end") env)
+      9)
+
+    ;; Caso con múltiples condiciones, la primera verdadera
+    (test-equal? "Multiple conditions first true"
+      (evaluar-expresion ("cond" ("-" "x" "1") "-" "1" ("-" "x" "2") "-" "2" "else" "9" "end") env)
+      1)
+
+    ;; Caso con múltiples condiciones, la segunda verdadera
+    (test-equal? "Multiple conditions second true"
+      (evaluar-expresion ("cond" ("-" "x" "2") "-" "2" ("-" "x" "1") "-" "1" "else" "9" "end") env)
+      1)
+
+    ;; Caso con múltiples condiciones, ninguna verdadera, usa else
+    (test-equal? "Multiple conditions none true with else"
+      (evaluar-expresion ("cond" ("-" "x" "2") "-" "2" ("-" "x" "3") "-" "4" "else" "9" "end") env)
+      9)
+
+    ;; Caso con cond anidado
+    (test-equal? "Nested cond"
+      (evaluar-expresion ("cond" ("cond" ("-" "x" "1") "-" "1" "else" "0" "end") "-" "2" "else" "9" "end") env)
+      2)
+
+    ;; Caso con cond vacío, solo else
+    (test-equal? "Empty cond with else"
+      (evaluar-expresion ("cond" "else" "9" "end") env)
+      9)
+
+    (display "All cond tests passed.\n")))
+
+(run-cond-tests)
 (interpretador)
